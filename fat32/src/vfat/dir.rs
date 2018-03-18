@@ -3,6 +3,7 @@ use std::str::from_utf8_unchecked;
 use std::char::{decode_utf16, REPLACEMENT_CHARACTER};
 use std::borrow::Cow;
 use std::io;
+use std::cmp::{Ord, Ordering};
 
 use traits;
 use util::VecExt;
@@ -134,6 +135,7 @@ impl Dir {
 pub struct DirIter {
     drive: Shared<VFat>,
     buf: Vec<u8>,
+    long_file_name: Vec<(u8, [u16; 13])>,
     pos: usize
 }
 
@@ -196,8 +198,25 @@ impl Iterator for DirIter {
         self.pos += 32;
 
         match ent {
-            VFatDirEntrySafe::Regular(regular) => Some(self.parse_regular_dir(regular, "")),
-            VFatDirEntrySafe::Lfn(lfn) => unimplemented!(), // TODO: Implement LFN!!!
+            VFatDirEntrySafe::Regular(regular) => {
+                self.long_file_name.sort_by(|&(seq1, _), &(seq2, _)| seq1.cmp(&seq2));
+                let lfn = decode_file_name_utf16(&self.long_file_name
+                    .iter()
+                    .flat_map(|&(_, ref buf)| buf)
+                    .map(|x| *x)
+                    .collect::<Vec<_>>()[..]);
+                self.long_file_name.clear();
+                Some(self.parse_regular_dir(regular, &lfn))
+            },
+            VFatDirEntrySafe::Lfn(lfn) => {
+                let seq = lfn.seq_number & 0x0F;
+                let mut name_buf = [0u16; 13];
+                name_buf[0..5].clone_from_slice(&lfn.name[..]);
+                name_buf[5..11].clone_from_slice(&lfn.name2[..]);
+                name_buf[11..].clone_from_slice(&lfn.name3[..]);
+                self.long_file_name.push((seq, name_buf));
+                self.next()
+            },
             VFatDirEntrySafe::End => None,
             VFatDirEntrySafe::Deleted => self.next()
         }
@@ -214,6 +233,7 @@ impl traits::Dir for Dir {
         Ok(DirIter {
             drive: self.drive.clone(),
             buf,
+            long_file_name: Vec::new(),
             pos: 0
         })
     }

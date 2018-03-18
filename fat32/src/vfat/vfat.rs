@@ -142,6 +142,7 @@ impl<'a> FileSystem for &'a Shared<VFat> {
     type Entry = Entry;
 
     fn open<P: AsRef<Path>>(self, path: P) -> io::Result<Self::Entry> {
+        //println!("path {:?}", path.as_ref().to_str());
         let mut cur_dir = Entry::Dir(Dir::from_root_cluster(self.clone(), self.borrow().root_dir_cluster));
         let mut first = true;
         for p in path.as_ref().components() {

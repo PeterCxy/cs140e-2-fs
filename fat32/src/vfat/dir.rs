@@ -73,24 +73,28 @@ pub enum VFatDirEntrySafe {
 
 unsafe fn parse_dir_entry(ent: &VFatDirEntry) -> VFatDirEntrySafe {
     if ent.unknown.attribute.equal_to(Attributes::LFN) {
-        VFatDirEntrySafe::Regular(ent.regular.clone())
+        VFatDirEntrySafe::Lfn(ent.long_filename.clone())
     } else if ent.unknown._unknown_1[0] == 0xE5 {
         VFatDirEntrySafe::Deleted
     } else if ent.unknown._unknown_1[0] == 0x00 {
         VFatDirEntrySafe::End
     } else {
-        VFatDirEntrySafe::Lfn(ent.long_filename.clone())
+        VFatDirEntrySafe::Regular(ent.regular.clone())
     }
 }
 
 fn decode_file_name_utf8_ascii(name: &[u8]) -> String {
     unsafe {
-        from_utf8_unchecked(name).to_string()
+        from_utf8_unchecked(
+            &name.iter()
+                .map(|x| *x)
+                .take_while(|x| *x != 0x00 && *x != 0x20)
+                .collect::<Vec<u8>>()[..]).to_string()
     }
 }
 
 fn decode_file_name_utf16(name: &[u16]) -> String {
-    decode_utf16(name.iter().cloned())
+    decode_utf16(name.iter().cloned().take_while(|x| *x != 0x00 && *x != 0xFF))
         .map(|r| r.unwrap_or(REPLACEMENT_CHARACTER))
         .collect()
 }
@@ -141,10 +145,15 @@ pub struct DirIter {
 
 impl DirIter {
     fn parse_regular_dir(&mut self, dir: VFatRegularDirEntry, prefix: &str) -> Entry {
-        let mut name = format!("{}{}", prefix, decode_file_name_utf8_ascii(&dir.name));
-        if dir.extension[0] != 0 {
-            name = format!("{}.{}", name, decode_file_name_utf8_ascii(&dir.extension));
+        // TODO: Fix things for dot files and more
+        let mut name = prefix.to_string();
+        if name == "" {
+            name = format!("{}{}", prefix, decode_file_name_utf8_ascii(&dir.name));
+            if dir.extension[0] != 0x00 && dir.extension[0] != 0x20 {
+                name = format!("{}.{}", name, decode_file_name_utf8_ascii(&dir.extension));
+            }
         }
+        
         let cluster = Cluster::from(((dir.first_cluster_high as u32) << 16) + dir.first_cluster_low as u32);
         let metadata = Metadata {
             is_read_only: dir.attribute.has_flag(Attributes::READ_ONLY),
@@ -199,12 +208,15 @@ impl Iterator for DirIter {
 
         match ent {
             VFatDirEntrySafe::Regular(regular) => {
-                self.long_file_name.sort_by(|&(seq1, _), &(seq2, _)| seq1.cmp(&seq2));
-                let lfn = decode_file_name_utf16(&self.long_file_name
-                    .iter()
-                    .flat_map(|&(_, ref buf)| buf)
-                    .map(|x| *x)
-                    .collect::<Vec<_>>()[..]);
+                let mut lfn = "".to_string();
+                if self.long_file_name.len() > 0 {
+                    self.long_file_name.sort_by(|&(seq1, _), &(seq2, _)| seq1.cmp(&seq2));
+                    lfn = decode_file_name_utf16(&self.long_file_name
+                        .iter()
+                        .flat_map(|&(_, ref buf)| buf)
+                        .map(|x| *x)
+                        .collect::<Vec<_>>()[..]).trim().to_string();
+                }
                 self.long_file_name.clear();
                 Some(self.parse_regular_dir(regular, &lfn))
             },

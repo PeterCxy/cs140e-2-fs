@@ -70,6 +70,24 @@ impl CachedDevice {
         }
     }
 
+    // Ensure that `sector` is read and inside cache
+    fn ensure_cache(&mut self, sector: u64) -> io::Result<()> {
+        if !self.cache.contains_key(&sector) {
+            let mut buf = vec![0u8; self.partition.sector_size as usize];
+            let device_sector_size = self.device.sector_size() as usize;
+            let (device_sector, num) = self.virtual_to_physical(sector);
+            for i in 0..(num as usize) {
+                let start = i * device_sector_size;
+                self.device.read_sector(device_sector + i as u64, &mut buf[start..(start + device_sector_size)])?;
+            }
+            self.cache.insert(sector, CacheEntry {
+                data: buf,
+                dirty: false
+            });
+        }
+        Ok(())
+    }
+
     /// Returns a mutable reference to the cached sector `sector`. If the sector
     /// is not already cached, the sector is first read from the disk.
     ///
@@ -81,7 +99,8 @@ impl CachedDevice {
     ///
     /// Returns an error if there is an error reading the sector from the disk.
     pub fn get_mut(&mut self, sector: u64) -> io::Result<&mut [u8]> {
-        unimplemented!("CachedDevice::get_mut()")
+        self.ensure_cache(sector)?;
+        Ok(&mut self.cache.get_mut(&sector).unwrap().data)
     }
 
     /// Returns a reference to the cached sector `sector`. If the sector is not
@@ -91,12 +110,41 @@ impl CachedDevice {
     ///
     /// Returns an error if there is an error reading the sector from the disk.
     pub fn get(&mut self, sector: u64) -> io::Result<&[u8]> {
-        unimplemented!("CachedDevice::get()")
+        self.ensure_cache(sector)?;
+        Ok(&self.cache.get_mut(&sector).unwrap().data)
     }
 }
 
 // FIXME: Implement `BlockDevice` for `CacheDevice`. The `read_sector` and
 // `write_sector` methods should only read/write from/to cached sectors.
+impl BlockDevice for CachedDevice {
+    fn read_sector(&mut self, n: u64, mut buf: &mut [u8]) -> io::Result<usize> {
+        if (buf.len() as u64) < self.partition.sector_size {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Buffer too short for a sector"));
+        }
+
+        io::copy(&mut self.get(n)?, &mut buf)?;
+        Ok(self.partition.sector_size as usize)
+    }
+
+    fn write_sector(&mut self, n: u64, buf: &[u8]) -> io::Result<usize> {
+        if (buf.len() as u64) < self.partition.sector_size {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Buffer too short for a sector"));
+        }
+
+        if self.cache.contains_key(&n) {
+            let cache_entry = self.cache.get_mut(&n).unwrap();
+            cache_entry.dirty = true;
+            cache_entry.data[..].clone_from_slice(buf);
+        } else {
+            self.cache.insert(n, CacheEntry {
+                data: Vec::from(buf.clone()),
+                dirty: true
+            });
+        }
+        Ok(buf.len())
+    }
+}
 
 impl fmt::Debug for CachedDevice {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

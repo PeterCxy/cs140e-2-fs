@@ -6,10 +6,23 @@ use vfat::{VFat, Shared, Cluster, Metadata};
 
 #[derive(Debug)]
 pub struct File {
-    // FIXME: Fill me in.
+    pub drive: Shared<VFat>,
+    pub cluster: Cluster,
+    pub name: String,
+    pub metadata: Metadata,
+    pub size: u32
 }
 
 // FIXME: Implement `traits::File` (and its supertraits) for `File`.
+impl traits::File for File {
+    fn sync(&mut self) -> io::Result<()> {
+        unimplemented!();
+    }
+
+    fn size(&self) -> u64 {
+        self.size as u64
+    }
+}
 
 impl io::Seek for File {
     /// Seek to offset `pos` in the file.
@@ -29,3 +42,20 @@ impl io::Seek for File {
         unimplemented!("File::seek()")
     }
 }
+
+impl io::Read for File {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        unimplemented!();
+    }
+}
+
+impl io::Write for File {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        unimplemented!();
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        unimplemented!();
+    }
+}
+

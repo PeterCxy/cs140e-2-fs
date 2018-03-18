@@ -14,12 +14,12 @@ pub struct CHS {
 #[repr(C, packed)]
 #[derive(Debug, Clone)]
 pub struct PartitionEntry {
-    bootable: u8, // 0x00: no, 0x80: yes
+    pub bootable: u8, // 0x00: no, 0x80: yes
     _starting_chs: CHS, // unused, see relative_sector
-    partition_type: u8, // FAT32: 0xB or 0xC
+    pub partition_type: u8, // FAT32: 0xB or 0xC
     _ending_chs: CHS, // unused, see relative_sector
-    relative_sector: u32, // offset from the start of disk to the starting sector
-    len: u32 // Total sectors in the partition
+    pub relative_sector: u32, // offset from the start of disk to the starting sector
+    pub len: u32 // Total sectors in the partition
 }
 
 /// The master boot record (MBR).
@@ -28,7 +28,7 @@ pub struct PartitionEntry {
 pub struct MasterBootRecord {
     _bootstrap: [u8; 436], // Bootstrap code, we don't need them here
     _disk_id: [u8; 10], // Disk ID, we don't need them here
-    partitions: [PartitionEntry; 4],
+    pub partitions: [PartitionEntry; 4],
     signature: u16 // Should be 0xAA55
 }
 
@@ -68,6 +68,15 @@ impl MasterBootRecord {
             }
         }
         return Ok(record);
+    }
+
+    pub fn find_partition_with_type(&self, part_type: u8) -> Option<PartitionEntry> {
+        for partition in self.partitions.iter() {
+            if partition.partition_type == part_type {
+                return Some(partition.clone());
+            }
+        }
+        None
     }
 }
 

@@ -8,22 +8,22 @@ use vfat::Error;
 pub struct BiosParameterBlock {
     bootstrap: [u8; 3], // Should be EB XX 90 (JMP SHORT XX 90)
     _oem_id: [u8; 8], // OEM Identifier
-    bytes_per_sector: u16,
-    sectors_per_cluster: u8,
-    reserved_sectors: u16,
-    fat_num: u8, // Number of File Allocation Tables
+    pub bytes_per_sector: u16,
+    pub sectors_per_cluster: u8,
+    pub reserved_sectors: u16,
+    pub fat_num: u8, // Number of File Allocation Tables
     _max_directory_entries: u16, // Should always be 0 for FAT32
     logical_sectors_2: u16, // Total logical sectors (in 2 bytes, if 0, use logical_sectors_4)
     _fat_id: u8, // media descriptor type
     sector_per_fat_2: u16, // if 0, use sector_per_fat_4
     _sector_per_track: u16,
     _heads: u16,
-    hidden_sectors: u32, // Number of hidden sectors
+    pub hidden_sectors: u32, // Number of hidden sectors
     logical_sectors_4: u32,
     sector_per_fat_4: u32,
     _flags: u16,
     _fat_ver: u16, // The high byte is the major version and the low byte is the minor version.
-    root_cluster: u32, // The cluster number of the root directory. Often this field is set to 2.
+    pub root_cluster: u32, // The cluster number of the root directory. Often this field is set to 2.
     _fsinfo_sector: u16, // The sector number of the FSInfo structure.
     _backup_boot_sector: u16, // The sector number of the backup boot sector.
     _reserved: [u8; 12], // Reserved. When the volume is formated these bytes should be zero.
@@ -58,14 +58,22 @@ impl BiosParameterBlock {
             return Ok(bpb);
         }
     }
+
+    pub fn get_sector_per_fat(&self) -> u32 {
+        if self.sector_per_fat_2 != 0 {
+            self.sector_per_fat_2 as u32
+        } else {
+            self.sector_per_fat_4
+        }
+    }
 }
 
 impl fmt::Debug for BiosParameterBlock {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "{{")?;
-        writeln!(f, "    bootstrap: {:?},", self.bootstrap)?;
-        writeln!(f, "    bootable_signature: {},", self.bootable_signature)?;
-        writeln!(f, "    fat_num: {}", self.fat_num)?;
-        writeln!(f, "}}")
+        f.debug_struct("CachedDevice")
+            .field("bootstrap", &self.bootstrap)
+            .field("bootable_signature", &self.bootable_signature)
+            .field("fat_num", &self.fat_num)
+            .finish()
     }
 }

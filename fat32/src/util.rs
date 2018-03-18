@@ -1,5 +1,7 @@
-use std::mem::{size_of, align_of, forget};
+use std::io;
+use std::mem::{size_of, align_of, forget, transmute_copy};
 use std::slice::{from_raw_parts, from_raw_parts_mut};
+use traits::BlockDevice;
 
 pub trait VecExt {
     /// Casts a `Vec<T>` into a `Vec<U>`.
@@ -108,5 +110,26 @@ impl<T> SliceExt for [T] {
         let new_len = calc_new_len::<T, U>(self);
         let new_ptr = self.as_mut_ptr() as *mut U;
         from_raw_parts_mut(new_ptr, new_len)
+    }
+}
+
+pub trait BlockDeviceExt {
+    /*
+     * Read sector `n` from the block device
+     * and cast to type `T`
+     * This function requires that `T` is at least the same size as the sector
+     */
+    unsafe fn read_sector_as<T>(&mut self, n: u64) -> io::Result<T>;
+}
+
+impl<B> BlockDeviceExt for B where B: BlockDevice {
+    unsafe fn read_sector_as<T>(&mut self, n: u64) -> io::Result<T> {
+        if size_of::<T>() < self.sector_size() as usize {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Sector size is larger than target size"));
+        }
+
+        let mut buf = vec![0; self.sector_size() as usize];
+        self.read_sector(n, &mut buf)?;
+        Ok(transmute_copy::<u8, T>(&*buf.as_ptr()))
     }
 }

@@ -121,7 +121,7 @@ impl BlockDevice for CachedDevice {
     fn sector_size(&self) -> u64 {
         self.partition.sector_size
     }
-    
+
     fn read_sector(&mut self, n: u64, mut buf: &mut [u8]) -> io::Result<usize> {
         if (buf.len() as u64) < self.partition.sector_size {
             return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Buffer too short for a sector"));

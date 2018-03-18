@@ -32,11 +32,11 @@ impl VFat {
             .or_else(|| mbr.find_partition_with_type(0xC))
             .ok_or(Error::NotFound)?;
         let ebpb_info = BiosParameterBlock::from(&mut device, fat32_part.relative_sector as u64)?;
-        let fat_start_sector = ebpb_info.reserved_sectors as u64;
+        let fat_start_sector = (fat32_part.relative_sector as u64) + ebpb_info.reserved_sectors as u64;
         let sector_per_fat = ebpb_info.get_sector_per_fat() as u32;
         let data_start_sector = fat_start_sector + (ebpb_info.fat_num as u64) * (sector_per_fat as u64);
-        println!("{:?}", fat32_part);
-        println!("{:?}", ebpb_info);
+        //println!("{:?}", fat32_part);
+        //println!("{:?}", ebpb_info);
 
         Ok(Shared::new(VFat {
             device: CachedDevice::new(device, Partition {
@@ -121,15 +121,15 @@ impl VFat {
         // Calculate which sector the FAT entry of the cluster is in
         let mut fat_offset = 4 * cluster.get() as usize;
         let sector_offset = fat_offset / (self.bytes_per_sector as usize);
-        println!("{:?}", self);
-        println!("sector offset {}", sector_offset);
+        //println!("{:?}", self);
+        //println!("sector offset {}", sector_offset);
         fat_offset = fat_offset % (self.bytes_per_sector as usize);
         if sector_offset >= self.sectors_per_fat as usize {
             return Err(io::Error::new(io::ErrorKind::NotFound, "Out of boundary of FAT"));
         }
         let data = self.device.get(self.fat_start_sector + sector_offset as u64)?;
-        println!("{:?}", &data[..]);
-        println!("{:?}", &data[fat_offset..(fat_offset + 4)]);
+        //println!("{:?}", &data[..]);
+        //println!("{:?}", &data[fat_offset..(fat_offset + 4)]);
         return Ok(unsafe {
             &*(data[fat_offset..(fat_offset + 4)].as_ptr() as *const FatEntry)
         })

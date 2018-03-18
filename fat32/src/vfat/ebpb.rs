@@ -62,10 +62,10 @@ impl BiosParameterBlock {
 
 impl fmt::Debug for BiosParameterBlock {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "{{");
-        writeln!(f, "    bootstrap: {:?},", self.bootstrap);
-        writeln!(f, "    bootable_signature: {},", self.bootable_signature);
-        writeln!(f, "    fat_num: {}", self.fat_num);
+        writeln!(f, "{{")?;
+        writeln!(f, "    bootstrap: {:?},", self.bootstrap)?;
+        writeln!(f, "    bootable_signature: {},", self.bootable_signature)?;
+        writeln!(f, "    fat_num: {}", self.fat_num)?;
         writeln!(f, "}}")
     }
 }

@@ -145,7 +145,6 @@ pub struct DirIter {
 
 impl DirIter {
     fn parse_regular_dir(&mut self, dir: VFatRegularDirEntry, prefix: &str) -> Entry {
-        // TODO: Fix things for dot files and more
         let mut name = prefix.to_string();
         if name == "" {
             name = format!("{}{}", prefix, decode_file_name_utf8_ascii(&dir.name));
@@ -230,7 +229,10 @@ impl Iterator for DirIter {
                 self.next()
             },
             VFatDirEntrySafe::End => None,
-            VFatDirEntrySafe::Deleted => self.next()
+            VFatDirEntrySafe::Deleted => {
+                self.long_file_name.clear();
+                self.next()
+            }
         }
     }
 }

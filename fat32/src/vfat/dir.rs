@@ -149,18 +149,74 @@ impl Dir {
     }
 }
 
+// Record of all LFNs preceeding a regular entry
+// the full file name can be decoded when all the LFNs are found
+// needed when finally constructing the entry structure
+struct LfnList {
+    // (sequence_number, file_name_characters)
+    // characters are UTF16
+    buf: Vec<(u8, [u16; 13])>
+}
+
+impl LfnList {
+    fn new() -> LfnList {
+        LfnList {
+            buf: Vec::new()
+        }
+    }
+
+    // Add a new entry into LFN list
+    fn push(&mut self, lfn: VFatLfnDirEntry) {
+        let seq = lfn.seq_number & 0x0F;
+        let mut name_buf = [0u16; 13];
+        name_buf[0..5].clone_from_slice(&lfn.name[..]);
+        name_buf[5..11].clone_from_slice(&lfn.name2[..]);
+        name_buf[11..].clone_from_slice(&lfn.name3[..]);
+        self.buf.push((seq, name_buf));
+    }
+
+    fn is_empty(&self) -> bool {
+        self.buf.is_empty()
+    }
+
+    fn clear(&mut self) {
+        self.buf.clear();
+    }
+
+    // Re-order everything recorded in this LFN sequence
+    // and decode them into string.
+    // Then clear everything.
+    fn decode(&mut self) -> String {
+        self.buf.sort_by(|&(seq1, _), &(seq2, _)| seq1.cmp(&seq2));
+        let ret = decode_file_name_utf16(&self.buf
+            .iter()
+            .flat_map(|&(_, ref x)| x)
+            .map(|x| *x)
+            .collect::<Vec<_>>()[..]).trim().to_string();
+        self.clear();
+        ret
+    }
+}
+
 pub struct DirIter {
     drive: Shared<VFat>,
     buf: Vec<u8>,
-    long_file_name: Vec<(u8, [u16; 13])>,
+    long_file_name: LfnList,
     pos: usize
 }
 
 impl DirIter {
-    fn parse_regular_dir(&mut self, dir: VFatRegularDirEntry, prefix: &str) -> Entry {
-        let mut name = prefix.to_string();
-        if name == "" {
-            name = format!("{}{}", prefix, decode_file_name_utf8_ascii(&dir.name));
+    fn parse_regular_dir(&mut self, dir: VFatRegularDirEntry) -> Entry {
+        let mut name = "".to_string();
+        if !self.long_file_name.is_empty() {
+            // A regular entry can be preceeded by
+            // as many LFNs as needed to contain the
+            // entire file name.
+            // If there is any LFN before this file, we should
+            // decode it before continuing.
+            name = self.long_file_name.decode();
+        } else {
+            name = decode_file_name_utf8_ascii(&dir.name);
             if dir.extension[0] != 0x00 && dir.extension[0] != 0x20 {
                 name = format!("{}.{}", name, decode_file_name_utf8_ascii(&dir.extension));
             }
@@ -220,33 +276,13 @@ impl Iterator for DirIter {
 
         match ent {
             VFatDirEntrySafe::Regular(regular) => {
-                let mut lfn = "".to_string();
-                if self.long_file_name.len() > 0 {
-                    // A regular entry can be preceeded by
-                    // as many LFNs as needed to contain the
-                    // entire file name.
-                    // If there is any LFN before this file, we should
-                    // decode it before continuing.
-                    self.long_file_name.sort_by(|&(seq1, _), &(seq2, _)| seq1.cmp(&seq2));
-                    lfn = decode_file_name_utf16(&self.long_file_name
-                        .iter()
-                        .flat_map(|&(_, ref buf)| buf)
-                        .map(|x| *x)
-                        .collect::<Vec<_>>()[..]).trim().to_string();
-                }
-                self.long_file_name.clear(); // Clear the record of LFNs
-                Some(self.parse_regular_dir(regular, &lfn))
+                Some(self.parse_regular_dir(regular))
             },
             VFatDirEntrySafe::Lfn(lfn) => {
                 // A LFN entry will preceed any future regular file entries
                 // we need to record them and reorder them when we
                 // have reached the regular entry
-                let seq = lfn.seq_number & 0x0F;
-                let mut name_buf = [0u16; 13];
-                name_buf[0..5].clone_from_slice(&lfn.name[..]);
-                name_buf[5..11].clone_from_slice(&lfn.name2[..]);
-                name_buf[11..].clone_from_slice(&lfn.name3[..]);
-                self.long_file_name.push((seq, name_buf));
+                self.long_file_name.push(lfn);
                 self.next() // Tail-recursive loop :)
             },
             VFatDirEntrySafe::End => None,
@@ -269,7 +305,7 @@ impl traits::Dir for Dir {
         Ok(DirIter {
             drive: self.drive.clone(),
             buf,
-            long_file_name: Vec::new(),
+            long_file_name: LfnList::new(),
             pos: 0
         })
     }

@@ -7,7 +7,7 @@ use std::cmp::{Ord, Ordering};
 
 use traits;
 use util::VecExt;
-use vfat::{VFat, Shared, File, Cluster, Entry};
+use vfat::{VFat, VFatExt, Shared, File, Cluster, Entry};
 use vfat::{Metadata, Attributes, Timestamp, Time, Date};
 
 #[derive(Debug)]
@@ -207,7 +207,7 @@ pub struct DirIter {
 
 impl DirIter {
     fn parse_regular_dir(&mut self, dir: VFatRegularDirEntry) -> Entry {
-        let mut name = "".to_string();
+        let mut name;
         if !self.long_file_name.is_empty() {
             // A regular entry can be preceeded by
             // as many LFNs as needed to contain the
@@ -254,7 +254,8 @@ impl DirIter {
                 cluster,
                 name,
                 metadata,
-                size: dir.size
+                size: dir.size as u64,
+                offset: 0
             })
         }
     }
@@ -301,7 +302,7 @@ impl traits::Dir for Dir {
 
     fn entries(&self) -> io::Result<DirIter> {
         let mut buf: Vec<u8> = Vec::new();
-        self.drive.borrow_mut().read_chain(self.cluster, &mut buf)?;
+        self.drive.read_chain(self.cluster, &mut buf)?;
         Ok(DirIter {
             drive: self.drive.clone(),
             buf,

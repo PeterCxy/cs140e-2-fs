@@ -1,3 +1,4 @@
+use std::cmp;
 use std::{io, fmt};
 use std::collections::HashMap;
 
@@ -123,30 +124,28 @@ impl BlockDevice for CachedDevice {
     }
 
     fn read_sector(&mut self, n: u64, mut buf: &mut [u8]) -> io::Result<usize> {
-        if (buf.len() as u64) < self.partition.sector_size {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Buffer too short for a sector"));
-        }
-
-        io::copy(&mut self.get(n)?, &mut buf)?;
-        Ok(self.partition.sector_size as usize)
+        let len = cmp::min(buf.len(), self.partition.sector_size as usize);
+        let mut sector = &self.get(n)?[..len];
+        io::copy(&mut sector, &mut buf)?;
+        Ok(len as usize)
     }
 
     fn write_sector(&mut self, n: u64, buf: &[u8]) -> io::Result<usize> {
-        if (buf.len() as u64) < self.partition.sector_size {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Buffer too short for a sector"));
-        }
+        unimplemented!("BlockDevice::write() unimplemented!");
+        /*let len = cmp::min(buf.len() as u64, self.partition.sector_size);
 
         if self.cache.contains_key(&n) {
             let cache_entry = self.cache.get_mut(&n).unwrap();
             cache_entry.dirty = true;
-            cache_entry.data[..].clone_from_slice(buf);
+            //cache_entry.data[..].clone_from_slice(buf);
+            cache_entry.data[..len].clone_from_slice(buf);
         } else {
             self.cache.insert(n, CacheEntry {
                 data: Vec::from(buf.clone()),
                 dirty: true
             });
         }
-        Ok(buf.len())
+        Ok(buf.len())*/
     }
 }
 

@@ -2,7 +2,7 @@ use std::cmp::{min, max};
 use std::io::{self, SeekFrom};
 
 use traits;
-use vfat::{VFat, Shared, Cluster, Metadata};
+use vfat::{VFat, VFatExt, Shared, Cluster, Metadata};
 
 #[derive(Debug)]
 pub struct File {
@@ -10,10 +10,21 @@ pub struct File {
     pub cluster: Cluster,
     pub name: String,
     pub metadata: Metadata,
-    pub size: u32
+    pub size: u64,
+    pub offset: u64
 }
 
-// FIXME: Implement `traits::File` (and its supertraits) for `File`.
+impl File {
+    fn set_offset(&mut self, pos: u64) -> io::Result<u64> {
+        if pos > self.size {
+            Err(io::Error::new(io::ErrorKind::InvalidInput, "Cannot seek beyond file end"))
+        } else {
+            self.offset = pos;
+            Ok(self.offset)
+        }
+    }
+}
+
 impl traits::File for File {
     fn sync(&mut self) -> io::Result<()> {
         unimplemented!();
@@ -39,13 +50,23 @@ impl io::Seek for File {
     /// Seeking before the start of a file or beyond the end of the file results
     /// in an `InvalidInput` error.
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        unimplemented!("File::seek()")
+        let cur_offset = self.offset;
+        let cur_size = self.size;
+        match pos {
+            SeekFrom::Start(p) => self.set_offset(p),
+            SeekFrom::Current(p) => self.set_offset(((cur_offset as i64) + p) as u64),
+            SeekFrom::End(p) => self.set_offset(((cur_size as i64) - 1 + p) as u64)
+        }
     }
 }
 
 impl io::Read for File {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        unimplemented!();
+        use std::io::Seek;
+        let max_len = min((self.size - self.offset) as usize, buf.len());
+        let read_bytes = self.drive.read_cluster(self.cluster, self.offset as usize, &mut buf[..max_len])?;
+        self.seek(SeekFrom::Current(read_bytes as i64))?;
+        Ok(read_bytes)
     }
 }
 

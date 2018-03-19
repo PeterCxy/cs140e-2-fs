@@ -52,7 +52,8 @@ pub struct VFatLfnDirEntry {
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct VFatUnknownDirEntry {
-    _unknown_1: [u8; 11],
+    flag: u8,
+    _unknown_1: [u8; 10],
     attribute: Attributes,
     _unknown_2: [u8; 20]
 }
@@ -71,18 +72,26 @@ pub enum VFatDirEntrySafe {
     End
 }
 
+/*
+ * Parse the union structure `VFatDirEntry` into a variant of
+ * `VFatDirEntrySafe`.
+ */
 unsafe fn parse_dir_entry(ent: &VFatDirEntry) -> VFatDirEntrySafe {
     if ent.unknown.attribute.equal_to(Attributes::LFN) {
         VFatDirEntrySafe::Lfn(ent.long_filename.clone())
-    } else if ent.unknown._unknown_1[0] == 0xE5 {
+    } else if ent.unknown.flag == 0xE5 {
         VFatDirEntrySafe::Deleted
-    } else if ent.unknown._unknown_1[0] == 0x00 {
+    } else if ent.unknown.flag == 0x00 {
         VFatDirEntrySafe::End
     } else {
         VFatDirEntrySafe::Regular(ent.regular.clone())
     }
 }
 
+// Decode file name from regular entries
+// Since they are all ASCII characters, we don't need
+// to do any check on this.
+// Regular file names can be early-terminated by 0x00 or 0x20
 fn decode_file_name_utf8_ascii(name: &[u8]) -> String {
     unsafe {
         from_utf8_unchecked(
@@ -93,6 +102,9 @@ fn decode_file_name_utf8_ascii(name: &[u8]) -> String {
     }
 }
 
+// Decode LFN file names (UTF16)
+// For unknown characters, replace them with replacement char
+// LFNs can be early terminated with 0x00 or 0xFF
 fn decode_file_name_utf16(name: &[u16]) -> String {
     decode_utf16(name.iter().cloned().take_while(|x| *x != 0x00 && *x != 0xFF))
         .map(|r| r.unwrap_or(REPLACEMENT_CHARACTER))
@@ -114,6 +126,7 @@ impl Dir {
             }
         }
     }
+
     /// Finds the entry named `name` in `self` and returns it. Comparison is
     /// case-insensitive.
     ///
@@ -203,12 +216,17 @@ impl Iterator for DirIter {
         let ent = unsafe {
             parse_dir_entry(&*(self.buf[(self.pos)..(self.pos + 32)].as_ptr() as *const VFatDirEntry))
         };
-        self.pos += 32;
+        self.pos += 32; // Jump to the next entry (dir entries are linear)
 
         match ent {
             VFatDirEntrySafe::Regular(regular) => {
                 let mut lfn = "".to_string();
                 if self.long_file_name.len() > 0 {
+                    // A regular entry can be preceeded by
+                    // as many LFNs as needed to contain the
+                    // entire file name.
+                    // If there is any LFN before this file, we should
+                    // decode it before continuing.
                     self.long_file_name.sort_by(|&(seq1, _), &(seq2, _)| seq1.cmp(&seq2));
                     lfn = decode_file_name_utf16(&self.long_file_name
                         .iter()
@@ -216,22 +234,26 @@ impl Iterator for DirIter {
                         .map(|x| *x)
                         .collect::<Vec<_>>()[..]).trim().to_string();
                 }
-                self.long_file_name.clear();
+                self.long_file_name.clear(); // Clear the record of LFNs
                 Some(self.parse_regular_dir(regular, &lfn))
             },
             VFatDirEntrySafe::Lfn(lfn) => {
+                // A LFN entry will preceed any future regular file entries
+                // we need to record them and reorder them when we
+                // have reached the regular entry
                 let seq = lfn.seq_number & 0x0F;
                 let mut name_buf = [0u16; 13];
                 name_buf[0..5].clone_from_slice(&lfn.name[..]);
                 name_buf[5..11].clone_from_slice(&lfn.name2[..]);
                 name_buf[11..].clone_from_slice(&lfn.name3[..]);
                 self.long_file_name.push((seq, name_buf));
-                self.next()
+                self.next() // Tail-recursive loop :)
             },
             VFatDirEntrySafe::End => None,
             VFatDirEntrySafe::Deleted => {
+                // Clear the LFN record because this file is deleted
                 self.long_file_name.clear();
-                self.next()
+                self.next() // Tail-recursive loop :)
             }
         }
     }

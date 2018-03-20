@@ -71,9 +71,11 @@ impl MasterBootRecord {
     }
 
     pub fn find_partition_with_type(&self, part_type: u8) -> Option<PartitionEntry> {
-        for partition in self.partitions.iter() {
+        for partition in self.partitions.clone().iter() {
             if partition.partition_type == part_type {
-                return Some(partition.clone());
+                let ret = Some(partition.clone());
+                //panic!("found!!!");
+                return ret;
             }
         }
         None

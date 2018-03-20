@@ -28,7 +28,7 @@ impl VFat {
 
         // Find the first fat32 partition
         let fat32_part = mbr
-            .find_partition_with_type(0xB)
+            .find_partition_with_type(0xC)
             .or_else(|| mbr.find_partition_with_type(0xC))
             .ok_or(Error::NotFound)?;
         let ebpb_info = BiosParameterBlock::from(&mut device, fat32_part.relative_sector as u64)?;
